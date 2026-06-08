@@ -497,8 +497,9 @@ document.addEventListener("click", function(e){
     var tabs = document.querySelectorAll(".tab");
     for(var i=0;i<tabs.length;i++) tabs[i].classList.remove("active");
     tab.classList.add("active");
-    BP_audio.tab();
-    state.tab = tab.getAttribute("data-tab");
+    var tb = tab.getAttribute("data-tab");
+    BP_audio.note(tb==="watch" ? "F" : tb==="progress" ? "C" : "D");
+    state.tab = tb;
     render();
     return;
   }
@@ -562,14 +563,14 @@ function loadAndPoll(){
 var BP_audio = (function(){
   var ctx = null;
   function ac(){ if(!ctx){ try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return ctx; }
-  // note frequencies (Hz) - status notes pitched up an octave so the intervals read clearly
-  var Bb2=116.54, Bb3=233.08,
+  // note frequencies (Hz)
+  var Bb2=116.54, C3=130.81, D3=146.83, F3=174.61, Bb3=233.08,
       C4=261.63, D4=293.66, F4=349.23, Bb4=466.16, C5=523.25;
-  // single notes for the status buttons (clear mid register)
+  // single notes for the status + tab buttons (lower octave)
   var NOTE = {
-    F: F4,   // TO WATCH  -> F
-    C: C4,   // WATCHING  -> the C below that F
-    D: D4    // WATCHED   -> the D sitting between them
+    F: F3,   // TO WATCH  -> F
+    C: C3,   // WATCHING  -> the C below that F
+    D: D3    // WATCHED   -> the D sitting between them
   };
   // Bb9 voicing for ADD: Bb, D, F, Bb, C
   var BB9 = [Bb2, D4, F4, Bb3, C5];
