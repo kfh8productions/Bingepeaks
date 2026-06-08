@@ -580,21 +580,13 @@ var BP_audio = (function(){
     filt.type="lowpass"; filt.frequency.value = freq*6; filt.Q.value=0.6;
     var g = a.createGain();
     filt.connect(g); g.connect(a.destination);
-    // two lightly detuned saw-ish voices for warmth (small detune so pitch stays clear)
+    // two lightly detuned voices for warmth (small detune so pitch stays clear)
     var dets=[-4,4];
     for(var k=0;k<dets.length;k++){
       var osc=a.createOscillator();
       osc.type="triangle"; osc.frequency.value=freq; osc.detune.value=dets[k];
       osc.connect(filt); osc.start(t0); osc.stop(t0+dur+0.05);
     }
-    // faint octave-up sparkle to help the ear catch the pitch
-    var oh=a.createOscillator(), gh=a.createGain();
-    oh.type="sine"; oh.frequency.value=freq*2;
-    gh.gain.value=0; oh.connect(gh); gh.connect(g);
-    gh.gain.setValueAtTime(0.0001,t0);
-    gh.gain.linearRampToValueAtTime(gainPeak*0.18,t0+0.02);
-    gh.gain.exponentialRampToValueAtTime(0.0001,t0+dur*0.7);
-    oh.start(t0); oh.stop(t0+dur+0.05);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.linearRampToValueAtTime(gainPeak, t0 + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
