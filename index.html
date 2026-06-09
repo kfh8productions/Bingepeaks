@@ -237,6 +237,28 @@ h1{
 .sync{position:fixed;bottom:12px;right:14px;font-size:10px;color:var(--gold);
   font-family:"Oswald",sans-serif;font-weight:400;letter-spacing:2px;
   background:rgba(13,24,19,0.85);border:1px solid var(--line);padding:4px 9px;border-radius:3px;text-transform:uppercase;}
+.muteBtn{
+  position:absolute;top:10px;right:10px;z-index:3;
+  background:rgba(13,24,19,0.5);border:1px solid var(--line);color:var(--cream);
+  font-family:"Oswald",sans-serif;font-size:9px;font-weight:500;letter-spacing:1.5px;
+  padding:4px 8px;border-radius:3px;cursor:pointer;text-transform:uppercase;opacity:0.8;}
+.muteBtn.on{color:var(--gold);border-color:var(--gold);opacity:1;}
+
+.coldBtn{
+  display:block;width:100%;margin:18px 0 0;padding:16px 14px;cursor:pointer;
+  background:transparent;border:1px solid var(--crimson);border-radius:4px;color:var(--cream);
+  font-family:"Oswald",sans-serif;font-weight:500;font-size:14px;letter-spacing:3px;text-transform:uppercase;
+  transition:background .2s,letter-spacing .2s;}
+.coldBtn:hover{background:rgba(138,17,25,0.18);letter-spacing:4px;}
+.coldBtn:active{background:rgba(138,17,25,0.3);}
+.coldOut{
+  margin:12px 0 30px;padding:20px 18px;border:1px solid var(--line);border-left:4px solid var(--crimson);
+  border-radius:3px;background:var(--panel);color:var(--ink);
+  font-family:"Oswald",sans-serif;font-weight:300;font-size:17px;line-height:1.5;letter-spacing:0.5px;
+  text-transform:uppercase;animation:fadein .5s ease;}
+.coldOut .hl{color:var(--crimsonLt);font-weight:500;}
+.coldOut .since{display:block;margin-top:12px;font-size:12px;letter-spacing:2px;color:var(--gold);font-weight:400;}
+@keyframes fadein{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 .sync:empty{display:none;}
 .hidden{display:none !important;}
 </style>
@@ -263,6 +285,7 @@ h1{
       <h1>Binge Peaks</h1>
       <div class="locating">The owls are not what they seem</div>
       <div class="chevron-strip"></div>
+      <button id="muteBtn" class="muteBtn" aria-label="Toggle sound">SOUND OFF</button>
     </div>
   </header>
 
@@ -278,6 +301,9 @@ h1{
   </div>
 
   <div id="list"></div>
+
+  <button id="coldBtn" class="coldBtn">THE COLD INDIFFERENCE OF TIME</button>
+  <div id="coldOut" class="coldOut hidden"></div>
 </div>
 
 <div class="overlay" id="overlay">
@@ -491,6 +517,24 @@ document.addEventListener("click", function(e){
   // add
   if(t.id === "addBtn"){ var inp=document.getElementById("addInput"); if(inp.value.trim()){ BP_audio.add(); } addItem(inp.value); inp.value=""; return; }
 
+  // mute toggle
+  if(t.id === "muteBtn"){
+    var nowMuted = !BP_audio.isMuted();
+    BP_audio.setMuted(nowMuted);
+    t.textContent = nowMuted ? "SOUND OFF" : "SOUND ON";
+    t.classList.toggle("on", !nowMuted);
+    if(!nowMuted){ BP_audio.note("F"); } // confirmation chime when unmuting
+    return;
+  }
+
+  // the cold indifference of time
+  if(t.id === "coldBtn"){
+    var out = document.getElementById("coldOut");
+    out.innerHTML = coldFact();
+    out.classList.remove("hidden");
+    return;
+  }
+
   // tab switch
   var tab = t.closest ? t.closest(".tab") : null;
   if(tab){
@@ -593,11 +637,14 @@ var BP_audio = (function(){
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   }
   function resume(){ var a=ac(); if(a && a.state==="suspended") a.resume(); }
+  var muted = true; // muted by default
   function tone(freq, dur, peak){
+    if(muted) return;
     var a = ac(); if(!a) return; resume();
     voice(freq, a.currentTime + 0.01, dur||1.1, peak||0.16);
   }
   function chord(notes, dur, peak, stagger){
+    if(muted) return;
     var a = ac(); if(!a) return; resume();
     var t0 = a.currentTime + 0.01;
     for(var i=0;i<notes.length;i++){
@@ -609,9 +656,98 @@ var BP_audio = (function(){
     note:   function(n){ tone(NOTE[n] || NOTE.F, 1.2, 0.18); }, // single status note
     finish: function(){ tone(NOTE.D, 1.2, 0.18); },             // WATCHED = D
     open:   function(){ tone(C5, 0.6, 0.08); },                 // soft high tick on open
-    tab:    function(){ tone(Bb2, 0.4, 0.07); }                 // low tick on tab switch
+    tab:    function(){ tone(Bb2, 0.4, 0.07); },                // low tick on tab switch
+    setMuted: function(m){ muted = m; if(!m){ resume(); } },
+    isMuted:  function(){ return muted; }
   };
 })();
+
+// ===== THE COLD INDIFFERENCE OF TIME =====
+// Each fact: a film with a release date, and a reference gap (two earlier dates).
+// We show it once "now - release" has grown longer than "refLate - refEarly".
+var COLD_FACTS = [
+  { film:"AMERICAN PIE: REUNION", release:"2012-04-06",
+    refEarly:"2003-08-01", refLate:"2012-04-06",
+    refLabel:"AMERICAN PIE: THE WEDDING AND THE REUNION" },
+  { film:"THE PHANTOM MENACE", release:"1999-05-19",
+    refEarly:"1983-05-25", refLate:"1999-05-19",
+    refLabel:"RETURN OF THE JEDI AND THE PHANTOM MENACE" },
+  { film:"SHREK 2", release:"2004-05-19",
+    refEarly:"2001-05-18", refLate:"2004-05-19",
+    refLabel:"SHREK AND SHREK 2" },
+  { film:"AVATAR", release:"2009-12-18",
+    refEarly:"1997-12-19", refLate:"2009-12-18",
+    refLabel:"TITANIC AND AVATAR" },
+  { film:"THE DARK KNIGHT", release:"2008-07-18",
+    refEarly:"1997-06-20", refLate:"2008-07-18",
+    refLabel:"BATMAN & ROBIN AND THE DARK KNIGHT" },
+  { film:"TOY STORY 3", release:"2010-06-18",
+    refEarly:"1999-11-24", refLate:"2010-06-18",
+    refLabel:"TOY STORY 2 AND TOY STORY 3" },
+  { film:"FINDING DORY", release:"2016-06-17",
+    refEarly:"2003-05-30", refLate:"2016-06-17",
+    refLabel:"FINDING NEMO AND FINDING DORY" },
+  { film:"FROZEN", release:"2013-11-27",
+    refEarly:"1994-06-15", refLate:"2013-11-27",
+    refLabel:"THE LION KING AND FROZEN" },
+  { film:"JURASSIC WORLD", release:"2015-06-12",
+    refEarly:"1993-06-11", refLate:"2015-06-12",
+    refLabel:"JURASSIC PARK AND JURASSIC WORLD" },
+  { film:"SKYFALL", release:"2012-10-26",
+    refEarly:"1995-11-17", refLate:"2012-10-26",
+    refLabel:"GOLDENEYE AND SKYFALL" },
+  { film:"INCREDIBLES 2", release:"2018-06-15",
+    refEarly:"2004-11-05", refLate:"2018-06-15",
+    refLabel:"THE INCREDIBLES AND INCREDIBLES 2" },
+  { film:"BLADE RUNNER 2049", release:"2017-10-06",
+    refEarly:"1982-06-25", refLate:"2017-10-06",
+    refLabel:"BLADE RUNNER AND BLADE RUNNER 2049" },
+  { film:"TOP GUN: MAVERICK", release:"2022-05-27",
+    refEarly:"1986-05-16", refLate:"2022-05-27",
+    refLabel:"TOP GUN AND MAVERICK" },
+  { film:"CASINO ROYALE", release:"2006-11-17",
+    refEarly:"1989-06-23", refLate:"2006-11-17",
+    refLabel:"LICENCE TO KILL AND CASINO ROYALE" },
+  { film:"THE SOCIAL NETWORK", release:"2010-10-01",
+    refEarly:"1998-09-04", refLate:"2010-10-01",
+    refLabel:"GOOGLE BEING FOUNDED AND THE SOCIAL NETWORK" }
+];
+
+function daysBetween(a, b){ return Math.round((b - a) / 86400000); }
+function humanSpan(days){
+  var y = days / 365.25;
+  if(y >= 1.5) return (Math.round(y*10)/10) + " YEARS";
+  var m = days / 30.44;
+  if(m >= 1.5) return Math.round(m) + " MONTHS";
+  return days + " DAYS";
+}
+function coldFact(){
+  var now = new Date();
+  var exceeded = [];
+  for(var i=0;i<COLD_FACTS.length;i++){
+    var f = COLD_FACTS[i];
+    var refGap = daysBetween(new Date(f.refEarly), new Date(f.refLate));
+    var sinceNow = daysBetween(new Date(f.release), now);
+    if(sinceNow > refGap){ exceeded.push({ f:f, over:sinceNow-refGap }); }
+  }
+  var pick;
+  if(exceeded.length){
+    pick = exceeded[Math.floor(Math.random()*exceeded.length)];
+  } else {
+    var f2 = COLD_FACTS[Math.floor(Math.random()*COLD_FACTS.length)];
+    var refGap2 = daysBetween(new Date(f2.refEarly), new Date(f2.refLate));
+    pick = { f:f2, over:daysBetween(new Date(f2.release), now) - refGap2 };
+  }
+  var f = pick.f;
+  if(pick.over >= 0){
+    return '<span>IT HAS NOW BEEN LONGER SINCE <span class="hl">' + f.film +
+      '</span> AND NOW THAN IT WAS BETWEEN <span class="hl">' + f.refLabel + '</span>.</span>' +
+      '<span class="since">BY ' + humanSpan(pick.over) + ', AND COUNTING.</span>';
+  }
+  return '<span>IN ' + humanSpan(-pick.over) + ' IT WILL HAVE BEEN LONGER SINCE <span class="hl">' +
+    f.film + '</span> AND NOW THAN IT WAS BETWEEN <span class="hl">' + f.refLabel + '</span>.</span>' +
+    '<span class="since">SAVOUR THE TIME YOU HAVE LEFT.</span>';
+}
 
 loadAndPoll();
 poll = setInterval(function(){
