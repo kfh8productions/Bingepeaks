@@ -271,8 +271,11 @@ h1{
   border-radius:3px;background:var(--panel);text-align:center;animation:fadein .5s ease;}
 .fwwmOut .fwwm-pre{display:block;font-family:"Oswald",sans-serif;font-weight:300;font-size:11px;
   letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:8px;}
-.fwwmOut .fwwm-pick{display:block;font-family:"TPGothic","Oswald",sans-serif;font-size:26px;
-  color:var(--cream);text-transform:uppercase;letter-spacing:1px;line-height:1.1;}
+.fwwmOut .fwwm-pick{display:inline-block;font-family:"TPGothic","Oswald",sans-serif;font-size:26px;
+  color:var(--cream);text-transform:uppercase;letter-spacing:1px;line-height:1.1;
+  text-decoration:none;border-bottom:2px solid transparent;transition:border-color .15s,color .15s;cursor:pointer;}
+.fwwmOut .fwwm-pick:hover{color:var(--greenLt);border-bottom-color:var(--greenLt);}
+.fwwmOut .fwwm-pick:visited{color:var(--cream);}
 .sync:empty{display:none;}
 .hidden{display:none !important;}
 </style>
@@ -861,8 +864,11 @@ var FWWM_FILMS = [
 ];
 function fireWalk(){
   var f = FWWM_FILMS[Math.floor(Math.random()*FWWM_FILMS.length)];
+  // strip trailing "(YEAR)" for a cleaner IMDb title search
+  var q = f.replace(/\s*\(\d{4}\)\s*$/, "");
+  var url = "https://www.imdb.com/find/?s=tt&ttype=ft&q=" + encodeURIComponent(q);
   return '<span class="fwwm-pre">THE LOG LADY SUGGESTS</span>' +
-    '<span class="fwwm-pick">' + f + '</span>';
+    '<a class="fwwm-pick" href="' + url + '" target="_blank" rel="noopener">' + f + '</a>';
 }
 
 loadAndPoll();
