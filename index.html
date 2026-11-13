@@ -120,7 +120,7 @@ h1{
   color:var(--ink);font-size:14px;font-weight:500;
 }
 .sugg-item:last-child{border-bottom:none;}
-.sugg-item:hover,.sugg-item:active{background:var(--panel2);}
+.sugg-item:hover,.sugg-item:active,.sugg-item.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--crimsonLt);}
 .sugg-item .st{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .sugg-item .sy{flex:none;color:var(--dim);font-family:"Oswald",sans-serif;font-size:13px;letter-spacing:1px;}
 
@@ -386,16 +386,17 @@ function setSync(t){
 }
 
 // ---- OMDb lookup ----
-function lookupOMDb(title, cb){
+function lookupOMDb(title, cb, imdbID){
   if(OMDB_KEY === "OMDB_API_KEY_HERE"){ cb(null); return; }
-  var url = "https://www.omdbapi.com/?apikey=" + OMDB_KEY + "&t=" + encodeURIComponent(title) + "&plot=short";
+  var by = imdbID ? ("&i=" + encodeURIComponent(imdbID)) : ("&t=" + encodeURIComponent(title));
+  var url = "https://www.omdbapi.com/?apikey=" + OMDB_KEY + by + "&plot=short";
   fetch(url).then(function(r){ return r.json(); }).then(function(d){
     if(d && d.Response === "True"){ cb(d); } else { cb(null); }
   }).catch(function(){ cb(null); });
 }
 
 // ---- Add ----
-function addItem(title){
+function addItem(title, imdbID){
   title = (title || "").trim();
   if(!title) return;
   var id = "x" + Date.now() + Math.floor(Math.random()*1000);
@@ -419,7 +420,7 @@ function addItem(title){
       render();
       fbPut(id, item);
     }
-  });
+  }, imdbID);
 }
 
 // ---- Render list ----
@@ -550,18 +551,42 @@ function closeDetail(){
 }
 
 // ---- Autocomplete for the add input (OMDb title search) ----
-var suggTimer = null, suggSeq = 0;
+var suggTimer = null, suggSeq = 0, suggIndex = -1;
 function suggestHide(){
   var box = document.getElementById("suggest");
+  suggIndex = -1;
   if(box){ box.classList.add("hidden"); box.innerHTML = ""; }
 }
+function suggestMove(dir){
+  var items = document.querySelectorAll("#suggest .sugg-item");
+  if(!items.length) return;
+  suggIndex = (suggIndex + dir + items.length) % items.length;
+  for(var i = 0; i < items.length; i++) items[i].classList.toggle("active", i === suggIndex);
+}
+function suggestActive(){
+  return document.querySelector("#suggest .sugg-item.active");
+}
+// add the chosen suggestion straight away, using its IMDb id for an exact match
+function suggestAdd(row){
+  clearTimeout(suggTimer); suggSeq++;
+  var inp = document.getElementById("addInput");
+  var title = row.dataset.title || "";
+  var imdbID = row.dataset.imdb || "";
+  inp.value = "";
+  suggestHide();
+  BP_audio.add();
+  addItem(title, imdbID);
+  inp.focus();
+}
 function suggestRender(list){
+  suggIndex = -1;
   var box = document.getElementById("suggest");
   box.innerHTML = "";
   list.forEach(function(m){
     var row = document.createElement("div");
     row.className = "sugg-item";
     row.dataset.title = m.Title || "";
+    row.dataset.imdb = m.imdbID || "";
     var st = document.createElement("span");
     st.className = "st";
     st.textContent = m.Title || "";
@@ -603,17 +628,17 @@ document.addEventListener("click", function(e){
   var t = e.target;
 
   // add
-  // autocomplete pick
+  // autocomplete pick adds that film
   var pick = t.closest ? t.closest(".sugg-item") : null;
-  if(pick){
-    var pi = document.getElementById("addInput");
-    pi.value = pick.dataset.title || "";
-    suggestHide();
-    pi.focus();
-    return;
-  }
+  if(pick){ suggestAdd(pick); return; }
 
-  if(t.id === "addBtn"){ var inp=document.getElementById("addInput"); if(inp.value.trim()){ BP_audio.add(); } suggestHide(); addItem(inp.value); inp.value=""; return; }
+  if(t.id === "addBtn"){
+    var act = suggestActive();
+    if(act){ suggestAdd(act); return; }
+    var inp=document.getElementById("addInput");
+    if(inp.value.trim()){ BP_audio.add(); }
+    suggestHide(); addItem(inp.value); inp.value=""; return;
+  }
 
   // mute toggle
   if(t.id === "muteBtn"){
@@ -699,7 +724,13 @@ document.addEventListener("click", function(e){
 
 document.getElementById("addInput").addEventListener("keydown", function(e){
   if(e.key === "Escape"){ suggestHide(); return; }
-  if(e.key === "Enter"){ suggestHide(); addItem(this.value); this.value=""; }
+  if(e.key === "ArrowDown"){ e.preventDefault(); suggestMove(1); return; }
+  if(e.key === "ArrowUp"){ e.preventDefault(); suggestMove(-1); return; }
+  if(e.key === "Enter"){
+    var act = suggestActive();
+    if(act){ e.preventDefault(); suggestAdd(act); return; }
+    suggestHide(); addItem(this.value); this.value="";
+  }
 });
 
 // ---- Sync loop ----
