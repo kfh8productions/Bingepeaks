@@ -292,23 +292,21 @@ h1{
   text-decoration:none;border-bottom:2px solid transparent;transition:border-color .15s,color .15s;cursor:pointer;}
 .fwwmOut .fwwm-pick:hover{color:var(--greenLt);border-bottom-color:var(--greenLt);}
 .fwwmOut .fwwm-pick:visited{color:var(--cream);}
-.stone-top{display:flex;flex-direction:column;align-items:center;margin:0 0 22px;}
+.stone-top{display:flex;flex-direction:column;align-items:center;margin:0 0 16px;}
+.stone-row{display:flex;align-items:center;gap:12px;}
 .stone-btn{
-  width:76px;height:76px;border-radius:50%;border:none;padding:0;cursor:pointer;flex:none;
-  background:
-    radial-gradient(circle at 34% 30%, #9b9a8e 0%, #5d5b52 38%, #3a382f 72%, #242219 100%);
-  box-shadow:
-    inset -7px -9px 14px rgba(0,0,0,0.5),
-    inset 5px 5px 9px rgba(255,255,255,0.14),
-    0 10px 20px rgba(0,0,0,0.55);
+  width:58px;height:30px;border:none;padding:0;cursor:pointer;flex:none;
+  border-radius:50% 50% 46% 46% / 62% 62% 38% 38%;
+  background:linear-gradient(172deg,#7d7b70 0%,#55534a 55%,#3d3b33 100%);
+  box-shadow:inset 0 -3px 0 rgba(0,0,0,0.32), inset 0 2px 0 rgba(255,255,255,0.12), 0 4px 8px rgba(0,0,0,0.45);
   transition:transform .12s ease;
 }
-.stone-btn:hover{transform:translateY(-2px);}
-.stone-btn:active{transform:scale(0.94);}
+.stone-btn:hover{transform:translateY(-1px);}
+.stone-btn:active{transform:scale(0.95);}
 .stone-lbl{
-  margin-top:10px;font-family:"Oswald",sans-serif;font-size:11px;letter-spacing:3px;
+  font-family:"Oswald",sans-serif;font-size:11px;letter-spacing:3px;
   color:var(--gold);text-transform:uppercase;}
-.stoneNote{margin-top:8px;text-align:center;font-family:"Oswald",sans-serif;font-size:12px;
+.stoneNote{margin-top:6px;text-align:center;font-family:"Oswald",sans-serif;font-size:12px;
   letter-spacing:2px;color:var(--gold);text-transform:uppercase;}
 .st-wrap{padding:22px 18px 6px;text-align:center;}
 .st-head{font-family:"TPGothic","Oswald",sans-serif;font-size:30px;line-height:1;color:var(--cream);
@@ -371,8 +369,10 @@ h1{
   </header>
 
   <div class="stone-top">
-    <button id="stoneBtn" class="stone-btn" aria-label="Tibetan stone throwing"></button>
-    <div class="stone-lbl">Tibetan stone throwing</div>
+    <div class="stone-row">
+      <button id="stoneBtn" class="stone-btn" aria-label="Tibetan stone throwing"></button>
+      <div class="stone-lbl">Tibetan stone throwing</div>
+    </div>
     <div id="stoneNote" class="stoneNote hidden"></div>
   </div>
 
@@ -1045,10 +1045,12 @@ poll = setInterval(function(){
 }, 5000);
 
 // ===== TIBETAN STONE THROWING =====
-// Shared node: /stone = { id, startedAt (server ms), votes: { uid: { picks:[itemId x3], at (server ms) } } }
-// Everyone polls /stone; phases are derived from startedAt so every open app agrees on the timing.
-var STONE = { data: null, uid: "", picks: [], locked: false, closedFor: null, dismissed: {}, renderedKey: "" };
-var STONE_VOTE_MS = 10000, STONE_GRACE_MS = 2000, STONE_SHOW_MS = 120000;
+// Shared node /stone = { id, startedAt (server ms), votes: { uid: { picks:[itemId x3], at (server ms) } } }
+// Phase timing runs on each device from the moment it first sees a new session, so a wrong phone clock
+// cannot stall it. Votes are only checked against server timestamps (startedAt and at), never device time.
+var STONE = { data: null, uid: "", picks: [], locked: false, closedFor: null, dismissed: {},
+  renderedKey: "", seenId: null, seenAt: null, booted: false };
+var STONE_VOTE_MS = 10000, STONE_GRACE_MS = 5000, STONE_SHOW_MS = 130000;
 var STONE_POINTS = [3, 2, 1];
 (function(){
   var fresh = "u" + Date.now().toString(36) + Math.floor(Math.random()*1000000).toString(36);
@@ -1068,13 +1070,17 @@ function stoneToArr(x){
   if(Array.isArray(x)) return x;
   return Object.keys(x).sort().map(function(k){ return x[k]; });
 }
-function stonePhase(d){
-  if(!d || !d.startedAt || !d.id) return "idle";
-  var e = Date.now() - d.startedAt;
+// Phase from this device's own clock, counted from when it first saw the session.
+function stonePhase(){
+  if(!STONE.data || !STONE.seenAt || STONE.seenId !== STONE.data.id) return "idle";
+  var e = Date.now() - STONE.seenAt;
   if(e < STONE_VOTE_MS) return "voting";
-  if(e < STONE_VOTE_MS + STONE_GRACE_MS) return "closing";
+  if(e < STONE_VOTE_MS + 2000) return "closing";
   if(e < STONE_SHOW_MS) return "reveal";
   return "idle";
+}
+function stoneLeft(){
+  return Math.max(0, Math.ceil((STONE.seenAt + STONE_VOTE_MS - Date.now()) / 1000));
 }
 function stoneWatchList(){
   return Object.keys(state.items).filter(function(k){
@@ -1091,29 +1097,37 @@ function stoneNote(msg){
   stoneNote.t = setTimeout(function(){ n.classList.add("hidden"); }, 3000);
 }
 
-// Count the votes that landed in time, then find films picked by two or more people.
+// Work out the result from the ballots that arrived in time.
+// solo: one ballot, its order stands. overlap: films picked by 2+ people. scatter: nothing overlapped, rank by points.
 function stoneTally(d){
-  var votes = d.votes || {}, byItem = {}, voters = 0;
+  var votes = d.votes || {}, byItem = {}, ballots = [];
   Object.keys(votes).forEach(function(u){
     var v = votes[u];
     if(!v || !v.at) return;
     if((v.at - d.startedAt) > STONE_VOTE_MS + STONE_GRACE_MS) return; // too late to count
     var picks = stoneToArr(v.picks).slice(0, 3);
     if(!picks.length) return;
-    voters++;
+    ballots.push(picks);
     picks.forEach(function(id, i){
       if(!byItem[id]) byItem[id] = { id: id, voters: 0, points: 0 };
       byItem[id].voters++;
       byItem[id].points += STONE_POINTS[i];
     });
   });
-  var overlaps = Object.keys(byItem).map(function(k){ return byItem[k]; })
-    .filter(function(o){ return o.voters >= 2 && state.items[o.id]; });
-  overlaps.forEach(function(o){ o.title = state.items[o.id].title || ""; });
-  overlaps.sort(function(a, b){
+  var all = Object.keys(byItem).map(function(k){ return byItem[k]; })
+    .filter(function(o){ return state.items[o.id]; });
+  all.forEach(function(o){ o.title = state.items[o.id].title || ""; });
+  var sorter = function(a, b){
     return (b.points - a.points) || (b.voters - a.voters) || a.title.localeCompare(b.title);
-  });
-  return { voters: voters, overlaps: overlaps };
+  };
+  all.sort(sorter);
+  var overlaps = all.filter(function(o){ return o.voters >= 2; });
+  var mode;
+  if(!ballots.length) mode = "none";
+  else if(ballots.length === 1) mode = "solo";
+  else if(overlaps.length) mode = "overlap";
+  else mode = "scatter";
+  return { voters: ballots.length, mode: mode, list: (mode === "overlap") ? overlaps : all };
 }
 
 function stoneVoteHTML(d, ph){
@@ -1125,7 +1139,6 @@ function stoneVoteHTML(d, ph){
       '<span class="st-rank">' + (rank >= 0 ? (rank + 1) : "") + '</span>' +
       '<div class="st-col"><span class="st-name">' + stoneEsc(f.title) + '</span></div></div>';
   }).join("");
-  var left = Math.max(0, Math.ceil((d.startedAt + STONE_VOTE_MS - Date.now()) / 1000));
   var status;
   if(ph === "closing") status = "Counting the stones...";
   else if(STONE.locked) status = "Locked in. Waiting for the others";
@@ -1135,7 +1148,7 @@ function stoneVoteHTML(d, ph){
     ? '<button class="st-submit" data-act="lock"' + (canLock ? '' : ' disabled') + '>LOCK IN</button>' : '';
   return '<div class="st-wrap">' +
     '<div class="st-head">Vote now</div>' +
-    '<div class="st-count" id="stoneCount">' + left + '</div>' +
+    '<div class="st-count" id="stoneCount">' + stoneLeft() + '</div>' +
     '<div class="st-sub">' + status + '</div>' +
     '<div class="st-list">' + (rows || '<div class="st-empty">No films on the to-watch list yet</div>') + '</div>' +
     btn + '</div>';
@@ -1146,31 +1159,31 @@ function stoneRevealHTML(d){
   var head = '<div class="st-head">The stones have spoken</div>';
   var sub = '<div class="st-sub">' + t.voters + (t.voters === 1 ? ' vote' : ' votes') + ' cast</div>';
   var close = '<button class="st-close" data-act="close">Close</button>';
-  if(!t.voters){
+  if(t.mode === "none"){
     return '<div class="st-wrap">' + head + sub + '<div class="st-empty">Nobody threw a stone</div>' + close + '</div>';
   }
-  if(!t.overlaps.length){
-    return '<div class="st-wrap">' + head + sub + '<div class="st-empty">No overlaps. The stones fell apart</div>' + close + '</div>';
-  }
-  var top = t.overlaps[0];
-  var tie = t.overlaps.length > 1 && t.overlaps[1].points === top.points;
+  var top = t.list[0];
+  var tie = t.list.length > 1 && t.list[1].points === top.points;
   var line = tie ? 'Tied at the top' : 'Top choice: ' + stoneEsc(top.title);
-  var rows = t.overlaps.map(function(o, i){
+  var note = (t.mode === "solo") ? "Only one vote, so it stands"
+    : (t.mode === "scatter") ? "No overlaps, so ranked by points"
+    : "1st = 3 points, 2nd = 2, 3rd = 1";
+  var rows = t.list.map(function(o, i){
     var isTop = (o.points === top.points);
     return '<div class="st-row' + (isTop ? ' top' : '') + '">' +
       '<span class="st-rank">' + (i + 1) + '</span>' +
       '<div class="st-col"><span class="st-name">' + stoneEsc(o.title) + '</span>' +
-      '<span class="st-meta">' + o.voters + ' picked it. ' + o.points + ' points</span></div></div>';
+      '<span class="st-meta">' + o.voters + (o.voters === 1 ? ' pick' : ' picks') + '. ' + o.points + ' points</span></div></div>';
   }).join("");
   return '<div class="st-wrap">' + head + sub +
     '<div class="st-topline">' + line + '</div>' +
     '<div class="st-list">' + rows + '</div>' +
-    '<div class="st-meta" style="margin-top:12px">1st = 3 points, 2nd = 2, 3rd = 1</div>' +
+    '<div class="st-meta" style="margin-top:12px">' + note + '</div>' +
     close + '</div>';
 }
 
 function stoneKey(){
-  var d = STONE.data, ph = stonePhase(d);
+  var d = STONE.data, ph = stonePhase();
   var ids = stoneWatchList().map(function(f){ return f.id; }).join(",");
   var votes = (d && d.votes) ? JSON.stringify(d.votes) : "";
   return [ph, d && d.id, STONE.picks.join(","), STONE.locked, ids, votes,
@@ -1178,9 +1191,9 @@ function stoneKey(){
 }
 function stoneRender(){
   var ov = document.getElementById("stoneOverlay"), box = document.getElementById("stoneModal");
-  var d = STONE.data, ph = stonePhase(d);
+  var d = STONE.data, ph = stonePhase();
   STONE.renderedKey = stoneKey();
-  if(ph === "idle" || (d && STONE.dismissed[d.id] && ph === "reveal")){
+  if(ph === "idle" || (ph === "reveal" && STONE.dismissed[d.id])){
     ov.classList.remove("on");
     return;
   }
@@ -1192,9 +1205,15 @@ function stonePoll(){
   fetch(FIREBASE_URL + "/stone.json")
     .then(function(r){ return r.json(); })
     .then(function(d){
-      var prev = STONE.data && STONE.data.id;
-      STONE.data = d || null;
-      if(d && d.id !== prev){ STONE.picks = []; STONE.locked = false; STONE.closedFor = null; }
+      d = (d && d.id) ? d : null;
+      STONE.data = d;
+      if(d && d.id !== STONE.seenId){
+        STONE.seenId = d.id;
+        // a session already running when the page opened is not replayed
+        STONE.seenAt = STONE.booted ? Date.now() : null;
+        STONE.picks = []; STONE.locked = false; STONE.closedFor = null;
+      }
+      STONE.booted = true;
       // pick up our own vote after a reload
       var mine = d && d.votes && d.votes[STONE.uid];
       if(mine){ STONE.picks = stoneToArr(mine.picks).slice(0, 3); STONE.locked = true; }
@@ -1202,11 +1221,11 @@ function stonePoll(){
 }
 function stoneLoop(){
   stonePoll();
-  setTimeout(stoneLoop, stonePhase(STONE.data) === "idle" ? 2000 : 1000);
+  setTimeout(stoneLoop, stonePhase() === "idle" ? 2000 : 1000);
 }
 
 function stoneStart(){
-  if(stonePhase(STONE.data) !== "idle"){ stoneNote("A session is already under way"); return; }
+  if(stonePhase() !== "idle"){ stoneNote("A session is already under way"); return; }
   if(stoneWatchList().length < 3){ stoneNote("Need at least three films on the to-watch list"); return; }
   var sid = "s" + Date.now().toString(36) + Math.floor(Math.random()*1000000).toString(36);
   fetch(FIREBASE_URL + "/stone.json", {
@@ -1238,14 +1257,13 @@ function stoneSubmit(){
   });
 }
 
-// Drives the countdown, submits any partial picks at the deadline, and re-renders on phase change.
+// Drives the countdown, submits any partial picks at the deadline, and re-renders on change.
 function stoneTick(){
-  var d = STONE.data, ph = stonePhase(d);
+  var ph = stonePhase(), d = STONE.data;
   if(ph === "voting" || ph === "closing"){
-    var left = Math.max(0, Math.ceil((d.startedAt + STONE_VOTE_MS - Date.now()) / 1000));
     var c = document.getElementById("stoneCount");
-    if(c) c.textContent = left;
-    if(left === 0 && !STONE.locked && STONE.picks.length && STONE.closedFor !== d.id){
+    if(c) c.textContent = stoneLeft();
+    if(stoneLeft() === 0 && !STONE.locked && STONE.picks.length && STONE.closedFor !== d.id){
       STONE.closedFor = d.id;
       stoneSubmit();
     }
@@ -1257,7 +1275,7 @@ document.getElementById("stoneBtn").addEventListener("click", stoneStart);
 document.getElementById("stoneOverlay").addEventListener("click", function(e){
   var t = e.target;
   var row = t.closest ? t.closest(".st-row") : null;
-  if(row && !row.classList.contains("locked") && stonePhase(STONE.data) === "voting" && !STONE.locked){
+  if(row && !row.classList.contains("locked") && stonePhase() === "voting" && !STONE.locked){
     var id = row.getAttribute("data-id");
     var i = STONE.picks.indexOf(id);
     if(i >= 0) STONE.picks.splice(i, 1);
