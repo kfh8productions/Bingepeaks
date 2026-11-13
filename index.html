@@ -1086,7 +1086,7 @@ function stoneWatchList(){
   return Object.keys(state.items).filter(function(k){
     return state.items[k] && state.items[k].status === "watch";
   }).sort(function(a, b){
-    return (state.items[a].added || 0) - (state.items[b].added || 0);
+    return (state.items[b].added || 0) - (state.items[a].added || 0);
   }).map(function(k){ return { id: k, title: state.items[k].title || "" }; });
 }
 function stoneNote(msg){
@@ -1197,7 +1197,12 @@ function stoneRender(){
     ov.classList.remove("on");
     return;
   }
+  var oldList = box.querySelector(".st-list");
+  var keepList = oldList ? oldList.scrollTop : 0, keepBox = box.scrollTop;
   box.innerHTML = (ph === "reveal") ? stoneRevealHTML(d) : stoneVoteHTML(d, ph);
+  var newList = box.querySelector(".st-list");
+  if(newList) newList.scrollTop = keepList;
+  box.scrollTop = keepBox;
   ov.classList.add("on");
 }
 
@@ -1225,7 +1230,8 @@ function stoneLoop(){
 }
 
 function stoneStart(){
-  if(stonePhase() !== "idle"){ stoneNote("A session is already under way"); return; }
+  var ph0 = stonePhase();
+  if(ph0 === "voting" || ph0 === "closing"){ stoneNote("A vote is already under way"); return; }
   if(stoneWatchList().length < 3){ stoneNote("Need at least three films on the to-watch list"); return; }
   var sid = "s" + Date.now().toString(36) + Math.floor(Math.random()*1000000).toString(36);
   fetch(FIREBASE_URL + "/stone.json", {
