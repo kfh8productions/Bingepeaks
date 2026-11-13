@@ -292,6 +292,45 @@ h1{
   text-decoration:none;border-bottom:2px solid transparent;transition:border-color .15s,color .15s;cursor:pointer;}
 .fwwmOut .fwwm-pick:hover{color:var(--greenLt);border-bottom-color:var(--greenLt);}
 .fwwmOut .fwwm-pick:visited{color:var(--cream);}
+.stoneBtn{
+  display:block;width:100%;margin:4px 0 0;padding:16px 14px;cursor:pointer;
+  background:transparent;border:1px solid var(--gold);border-radius:4px;color:var(--cream);
+  font-family:"Oswald",sans-serif;font-weight:500;font-size:14px;letter-spacing:3px;text-transform:uppercase;
+  transition:background .2s,letter-spacing .2s;}
+.stoneBtn:hover{background:rgba(201,162,74,0.14);letter-spacing:4px;}
+.stoneBtn:active{background:rgba(201,162,74,0.26);}
+.stoneNote{margin:10px 0 30px;text-align:center;font-family:"Oswald",sans-serif;font-size:12px;
+  letter-spacing:2px;color:var(--gold);text-transform:uppercase;}
+.st-wrap{padding:22px 18px 6px;text-align:center;}
+.st-head{font-family:"TPGothic","Oswald",sans-serif;font-size:30px;line-height:1;color:var(--cream);
+  text-transform:uppercase;letter-spacing:1px;}
+.st-count{font-family:"Oswald",sans-serif;font-weight:600;font-size:64px;line-height:1;color:var(--crimsonLt);margin:12px 0 6px;}
+.st-sub{font-family:"Oswald",sans-serif;font-size:12px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:14px;}
+.st-list{text-align:left;max-height:48vh;overflow-y:auto;}
+.st-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);
+  border-radius:3px;margin-bottom:6px;cursor:pointer;background:var(--panel2);}
+.st-row.picked{border-color:var(--greenLt);background:var(--green);}
+.st-row.locked{cursor:default;}
+.st-row.top{border-color:var(--crimsonLt);box-shadow:inset 4px 0 0 var(--crimsonLt);}
+.st-rank{flex:none;width:26px;height:26px;border-radius:50%;border:1px solid var(--gold);color:var(--gold);
+  display:flex;align-items:center;justify-content:center;font-family:"Oswald",sans-serif;font-size:13px;}
+.st-row.picked .st-rank{background:var(--gold);color:#10201a;}
+.st-col{display:flex;flex-direction:column;min-width:0;}
+.st-name{font-family:"Oswald",sans-serif;font-size:17px;text-transform:uppercase;color:var(--cream);letter-spacing:.5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.st-meta{font-family:"Oswald",sans-serif;font-size:11px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-top:3px;}
+.st-topline{font-family:"TPGothic","Oswald",sans-serif;font-size:24px;line-height:1.1;color:var(--crimsonLt);
+  text-transform:uppercase;margin:8px 0 16px;}
+.st-empty{font-family:"Oswald",sans-serif;font-size:14px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;padding:18px 0;}
+.st-submit{
+  margin:16px 0 4px;width:100%;padding:13px 14px;cursor:pointer;background:transparent;color:var(--cream);
+  border:1px solid var(--crimsonLt);border-radius:3px;font-family:"Oswald",sans-serif;font-size:14px;
+  letter-spacing:2px;text-transform:uppercase;}
+.st-submit:hover:not(:disabled){background:rgba(138,17,25,0.25);}
+.st-submit:disabled{opacity:.35;cursor:default;}
+.st-close{margin:18px 0 6px;padding:11px 22px;cursor:pointer;background:transparent;color:var(--cream);
+  border:1px solid var(--greenLt);border-radius:3px;font-family:"Oswald",sans-serif;font-size:14px;
+  letter-spacing:1.5px;text-transform:uppercase;}
 .sync:empty{display:none;}
 .hidden{display:none !important;}
 </style>
@@ -343,10 +382,17 @@ h1{
 
   <button id="fwwmBtn" class="fwwmBtn">FIRE WALK WITH ME</button>
   <div id="fwwmOut" class="fwwmOut hidden"></div>
+
+  <button id="stoneBtn" class="stoneBtn">TIBETAN STONE THROWING</button>
+  <div id="stoneNote" class="stoneNote hidden"></div>
 </div>
 
 <div class="overlay" id="overlay">
   <div class="modal" id="modal"></div>
+</div>
+
+<div class="overlay" id="stoneOverlay">
+  <div class="modal" id="stoneModal"></div>
 </div>
 
 <div class="sync" id="sync"></div>
@@ -985,6 +1031,234 @@ loadAndPoll();
 poll = setInterval(function(){
   if(!currentId){ loadAndPoll(); } // pause polling while editing to avoid clobbering
 }, 5000);
+
+// ===== TIBETAN STONE THROWING =====
+// Shared node: /stone = { id, startedAt (server ms), votes: { uid: { picks:[itemId x3], at (server ms) } } }
+// Everyone polls /stone; phases are derived from startedAt so every open app agrees on the timing.
+var STONE = { data: null, uid: "", picks: [], locked: false, closedFor: null, dismissed: {}, renderedKey: "" };
+var STONE_VOTE_MS = 10000, STONE_GRACE_MS = 2000, STONE_SHOW_MS = 120000;
+var STONE_POINTS = [3, 2, 1];
+(function(){
+  var fresh = "u" + Date.now().toString(36) + Math.floor(Math.random()*1000000).toString(36);
+  try{
+    STONE.uid = localStorage.getItem("bp_uid") || "";
+    if(!STONE.uid){ STONE.uid = fresh; localStorage.setItem("bp_uid", STONE.uid); }
+  }catch(e){ STONE.uid = fresh; }
+})();
+
+function stoneEsc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function stoneToArr(x){
+  if(!x) return [];
+  if(Array.isArray(x)) return x;
+  return Object.keys(x).sort().map(function(k){ return x[k]; });
+}
+function stonePhase(d){
+  if(!d || !d.startedAt || !d.id) return "idle";
+  var e = Date.now() - d.startedAt;
+  if(e < STONE_VOTE_MS) return "voting";
+  if(e < STONE_VOTE_MS + STONE_GRACE_MS) return "closing";
+  if(e < STONE_SHOW_MS) return "reveal";
+  return "idle";
+}
+function stoneWatchList(){
+  return Object.keys(state.items).filter(function(k){
+    return state.items[k] && state.items[k].status === "watch";
+  }).sort(function(a, b){
+    return (state.items[a].added || 0) - (state.items[b].added || 0);
+  }).map(function(k){ return { id: k, title: state.items[k].title || "" }; });
+}
+function stoneNote(msg){
+  var n = document.getElementById("stoneNote");
+  n.textContent = msg;
+  n.classList.remove("hidden");
+  clearTimeout(stoneNote.t);
+  stoneNote.t = setTimeout(function(){ n.classList.add("hidden"); }, 3000);
+}
+
+// Count the votes that landed in time, then find films picked by two or more people.
+function stoneTally(d){
+  var votes = d.votes || {}, byItem = {}, voters = 0;
+  Object.keys(votes).forEach(function(u){
+    var v = votes[u];
+    if(!v || !v.at) return;
+    if((v.at - d.startedAt) > STONE_VOTE_MS + STONE_GRACE_MS) return; // too late to count
+    var picks = stoneToArr(v.picks).slice(0, 3);
+    if(!picks.length) return;
+    voters++;
+    picks.forEach(function(id, i){
+      if(!byItem[id]) byItem[id] = { id: id, voters: 0, points: 0 };
+      byItem[id].voters++;
+      byItem[id].points += STONE_POINTS[i];
+    });
+  });
+  var overlaps = Object.keys(byItem).map(function(k){ return byItem[k]; })
+    .filter(function(o){ return o.voters >= 2 && state.items[o.id]; });
+  overlaps.forEach(function(o){ o.title = state.items[o.id].title || ""; });
+  overlaps.sort(function(a, b){
+    return (b.points - a.points) || (b.voters - a.voters) || a.title.localeCompare(b.title);
+  });
+  return { voters: voters, overlaps: overlaps };
+}
+
+function stoneVoteHTML(d, ph){
+  var list = stoneWatchList();
+  var rows = list.map(function(f){
+    var rank = STONE.picks.indexOf(f.id);
+    var cls = "st-row" + (rank >= 0 ? " picked" : "") + (STONE.locked ? " locked" : "");
+    return '<div class="' + cls + '" data-id="' + stoneEsc(f.id) + '">' +
+      '<span class="st-rank">' + (rank >= 0 ? (rank + 1) : "") + '</span>' +
+      '<div class="st-col"><span class="st-name">' + stoneEsc(f.title) + '</span></div></div>';
+  }).join("");
+  var left = Math.max(0, Math.ceil((d.startedAt + STONE_VOTE_MS - Date.now()) / 1000));
+  var status;
+  if(ph === "closing") status = "Counting the stones...";
+  else if(STONE.locked) status = "Locked in. Waiting for the others";
+  else status = STONE.picks.length + " of 3 chosen. Tap in order of preference";
+  var canLock = !STONE.locked && STONE.picks.length === 3;
+  var btn = (ph === "voting" && !STONE.locked)
+    ? '<button class="st-submit" data-act="lock"' + (canLock ? '' : ' disabled') + '>LOCK IN</button>' : '';
+  return '<div class="st-wrap">' +
+    '<div class="st-head">Vote now</div>' +
+    '<div class="st-count" id="stoneCount">' + left + '</div>' +
+    '<div class="st-sub">' + status + '</div>' +
+    '<div class="st-list">' + (rows || '<div class="st-empty">No films on the to-watch list yet</div>') + '</div>' +
+    btn + '</div>';
+}
+
+function stoneRevealHTML(d){
+  var t = stoneTally(d);
+  var head = '<div class="st-head">The stones have spoken</div>';
+  var sub = '<div class="st-sub">' + t.voters + (t.voters === 1 ? ' vote' : ' votes') + ' cast</div>';
+  var close = '<button class="st-close" data-act="close">Close</button>';
+  if(!t.voters){
+    return '<div class="st-wrap">' + head + sub + '<div class="st-empty">Nobody threw a stone</div>' + close + '</div>';
+  }
+  if(!t.overlaps.length){
+    return '<div class="st-wrap">' + head + sub + '<div class="st-empty">No overlaps. The stones fell apart</div>' + close + '</div>';
+  }
+  var top = t.overlaps[0];
+  var tie = t.overlaps.length > 1 && t.overlaps[1].points === top.points;
+  var line = tie ? 'Tied at the top' : 'Top choice: ' + stoneEsc(top.title);
+  var rows = t.overlaps.map(function(o, i){
+    var isTop = (o.points === top.points);
+    return '<div class="st-row' + (isTop ? ' top' : '') + '">' +
+      '<span class="st-rank">' + (i + 1) + '</span>' +
+      '<div class="st-col"><span class="st-name">' + stoneEsc(o.title) + '</span>' +
+      '<span class="st-meta">' + o.voters + ' picked it. ' + o.points + ' points</span></div></div>';
+  }).join("");
+  return '<div class="st-wrap">' + head + sub +
+    '<div class="st-topline">' + line + '</div>' +
+    '<div class="st-list">' + rows + '</div>' +
+    '<div class="st-meta" style="margin-top:12px">1st = 3 points, 2nd = 2, 3rd = 1</div>' +
+    close + '</div>';
+}
+
+function stoneKey(){
+  var d = STONE.data, ph = stonePhase(d);
+  var ids = stoneWatchList().map(function(f){ return f.id; }).join(",");
+  var votes = (d && d.votes) ? JSON.stringify(d.votes) : "";
+  return [ph, d && d.id, STONE.picks.join(","), STONE.locked, ids, votes,
+    !!(d && STONE.dismissed[d.id])].join("#");
+}
+function stoneRender(){
+  var ov = document.getElementById("stoneOverlay"), box = document.getElementById("stoneModal");
+  var d = STONE.data, ph = stonePhase(d);
+  STONE.renderedKey = stoneKey();
+  if(ph === "idle" || (d && STONE.dismissed[d.id] && ph === "reveal")){
+    ov.classList.remove("on");
+    return;
+  }
+  box.innerHTML = (ph === "reveal") ? stoneRevealHTML(d) : stoneVoteHTML(d, ph);
+  ov.classList.add("on");
+}
+
+function stonePoll(){
+  fetch(FIREBASE_URL + "/stone.json")
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var prev = STONE.data && STONE.data.id;
+      STONE.data = d || null;
+      if(d && d.id !== prev){ STONE.picks = []; STONE.locked = false; STONE.closedFor = null; }
+      // pick up our own vote after a reload
+      var mine = d && d.votes && d.votes[STONE.uid];
+      if(mine){ STONE.picks = stoneToArr(mine.picks).slice(0, 3); STONE.locked = true; }
+    }).catch(function(){});
+}
+function stoneLoop(){
+  stonePoll();
+  setTimeout(stoneLoop, stonePhase(STONE.data) === "idle" ? 2000 : 1000);
+}
+
+function stoneStart(){
+  if(stonePhase(STONE.data) !== "idle"){ stoneNote("A session is already under way"); return; }
+  if(stoneWatchList().length < 3){ stoneNote("Need at least three films on the to-watch list"); return; }
+  var sid = "s" + Date.now().toString(36) + Math.floor(Math.random()*1000000).toString(36);
+  fetch(FIREBASE_URL + "/stone.json", {
+    method: "PUT",
+    body: JSON.stringify({ id: sid, startedAt: { ".sv": "timestamp" } })
+  }).then(function(){
+    BP_audio.note("F");
+    stonePoll();
+  }).catch(function(){ stoneNote("Offline. Try again"); });
+}
+
+function stoneSubmit(){
+  var d = STONE.data;
+  if(!d || !STONE.picks.length) return;
+  STONE.locked = true;
+  stoneRender();
+  fetch(FIREBASE_URL + "/stone/votes/" + STONE.uid + ".json", {
+    method: "PUT",
+    body: JSON.stringify({ picks: STONE.picks.slice(0, 3), at: { ".sv": "timestamp" } })
+  }).then(function(){ stonePoll(); }).catch(function(){
+    STONE.locked = false;
+    stoneNote("Vote did not send. Lock in again");
+    stoneRender();
+  });
+}
+
+// Drives the countdown, submits any partial picks at the deadline, and re-renders on phase change.
+function stoneTick(){
+  var d = STONE.data, ph = stonePhase(d);
+  if(ph === "voting" || ph === "closing"){
+    var left = Math.max(0, Math.ceil((d.startedAt + STONE_VOTE_MS - Date.now()) / 1000));
+    var c = document.getElementById("stoneCount");
+    if(c) c.textContent = left;
+    if(left === 0 && !STONE.locked && STONE.picks.length && STONE.closedFor !== d.id){
+      STONE.closedFor = d.id;
+      stoneSubmit();
+    }
+  }
+  if(stoneKey() !== STONE.renderedKey) stoneRender();
+}
+
+document.getElementById("stoneBtn").addEventListener("click", stoneStart);
+document.getElementById("stoneOverlay").addEventListener("click", function(e){
+  var t = e.target;
+  var row = t.closest ? t.closest(".st-row") : null;
+  if(row && !row.classList.contains("locked") && stonePhase(STONE.data) === "voting" && !STONE.locked){
+    var id = row.getAttribute("data-id");
+    var i = STONE.picks.indexOf(id);
+    if(i >= 0) STONE.picks.splice(i, 1);
+    else if(STONE.picks.length < 3) STONE.picks.push(id);
+    stoneRender();
+    return;
+  }
+  var btn = t.closest ? t.closest("button[data-act]") : null;
+  if(!btn || btn.disabled) return;
+  if(btn.getAttribute("data-act") === "lock"){ stoneSubmit(); return; }
+  if(btn.getAttribute("data-act") === "close" && STONE.data){
+    STONE.dismissed[STONE.data.id] = true;
+    stoneRender();
+  }
+});
+
+stoneLoop();
+setInterval(stoneTick, 250);
 
 // ---- PWA service worker ----
 if("serviceWorker" in navigator){
