@@ -1200,8 +1200,10 @@ function stoneStart(){
   fetch(FIREBASE_URL + "/stone.json", {
     method: "PUT",
     body: JSON.stringify({ id: sid, startedAt: { ".sv": "timestamp" } })
-  }).then(function(){
+  }).then(function(r){
+    if(!r.ok){ stoneNote("Database refused the start (" + r.status + "). Check Firebase rules for /stone"); return; }
     BP_audio.note("F");
+    stoneNote("Vote is starting");
     stonePoll();
   }).catch(function(){ stoneNote("Offline. Try again"); });
 }
@@ -1214,7 +1216,10 @@ function stoneSubmit(){
   fetch(FIREBASE_URL + "/stone/votes/" + STONE.uid + ".json", {
     method: "PUT",
     body: JSON.stringify({ picks: STONE.picks.slice(0, 3), at: { ".sv": "timestamp" } })
-  }).then(function(){ stonePoll(); }).catch(function(){
+  }).then(function(r){
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    stonePoll();
+  }).catch(function(){
     STONE.locked = false;
     stoneNote("Vote did not send. Lock in again");
     stoneRender();
