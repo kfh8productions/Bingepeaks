@@ -292,14 +292,23 @@ h1{
   text-decoration:none;border-bottom:2px solid transparent;transition:border-color .15s,color .15s;cursor:pointer;}
 .fwwmOut .fwwm-pick:hover{color:var(--greenLt);border-bottom-color:var(--greenLt);}
 .fwwmOut .fwwm-pick:visited{color:var(--cream);}
-.stoneBtn{
-  display:block;width:100%;margin:4px 0 0;padding:16px 14px;cursor:pointer;
-  background:transparent;border:1px solid var(--gold);border-radius:4px;color:var(--cream);
-  font-family:"Oswald",sans-serif;font-weight:500;font-size:14px;letter-spacing:3px;text-transform:uppercase;
-  transition:background .2s,letter-spacing .2s;}
-.stoneBtn:hover{background:rgba(201,162,74,0.14);letter-spacing:4px;}
-.stoneBtn:active{background:rgba(201,162,74,0.26);}
-.stoneNote{margin:10px 0 30px;text-align:center;font-family:"Oswald",sans-serif;font-size:12px;
+.stone-top{display:flex;flex-direction:column;align-items:center;margin:0 0 22px;}
+.stone-btn{
+  width:76px;height:76px;border-radius:50%;border:none;padding:0;cursor:pointer;flex:none;
+  background:
+    radial-gradient(circle at 34% 30%, #9b9a8e 0%, #5d5b52 38%, #3a382f 72%, #242219 100%);
+  box-shadow:
+    inset -7px -9px 14px rgba(0,0,0,0.5),
+    inset 5px 5px 9px rgba(255,255,255,0.14),
+    0 10px 20px rgba(0,0,0,0.55);
+  transition:transform .12s ease;
+}
+.stone-btn:hover{transform:translateY(-2px);}
+.stone-btn:active{transform:scale(0.94);}
+.stone-lbl{
+  margin-top:10px;font-family:"Oswald",sans-serif;font-size:11px;letter-spacing:3px;
+  color:var(--gold);text-transform:uppercase;}
+.stoneNote{margin-top:8px;text-align:center;font-family:"Oswald",sans-serif;font-size:12px;
   letter-spacing:2px;color:var(--gold);text-transform:uppercase;}
 .st-wrap{padding:22px 18px 6px;text-align:center;}
 .st-head{font-family:"TPGothic","Oswald",sans-serif;font-size:30px;line-height:1;color:var(--cream);
@@ -361,6 +370,12 @@ h1{
     </div>
   </header>
 
+  <div class="stone-top">
+    <button id="stoneBtn" class="stone-btn" aria-label="Tibetan stone throwing"></button>
+    <div class="stone-lbl">Tibetan stone throwing</div>
+    <div id="stoneNote" class="stoneNote hidden"></div>
+  </div>
+
   <div class="tabs" id="tabs">
     <div class="tab active" data-tab="watch">TO WATCH<span class="ct" id="c-watch"></span></div>
     <div class="tab" data-tab="progress">WATCHING<span class="ct" id="c-progress"></span></div>
@@ -382,9 +397,6 @@ h1{
 
   <button id="fwwmBtn" class="fwwmBtn">FIRE WALK WITH ME</button>
   <div id="fwwmOut" class="fwwmOut hidden"></div>
-
-  <button id="stoneBtn" class="stoneBtn">TIBETAN STONE THROWING</button>
-  <div id="stoneNote" class="stoneNote hidden"></div>
 </div>
 
 <div class="overlay" id="overlay">
