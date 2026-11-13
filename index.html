@@ -107,6 +107,22 @@ h1{
 }
 .addbar button:hover{background:var(--green);}
 .addbar button:active{background:var(--green);}
+.addwrap{position:relative;flex:1;display:flex;}
+.addwrap input{flex:1;}
+.suggest{
+  position:absolute;top:100%;left:0;right:0;z-index:30;margin-top:4px;
+  background:var(--panel);border:1px solid var(--greenLt);border-radius:3px;
+  max-height:320px;overflow-y:auto;box-shadow:0 10px 24px rgba(0,0,0,.45);
+}
+.sugg-item{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line);
+  color:var(--ink);font-size:14px;font-weight:500;
+}
+.sugg-item:last-child{border-bottom:none;}
+.sugg-item:hover,.sugg-item:active{background:var(--panel2);}
+.sugg-item .st{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sugg-item .sy{flex:none;color:var(--dim);font-family:"Oswald",sans-serif;font-size:13px;letter-spacing:1px;}
 
 /* ===== CARDS as posters ===== */
 .card{
@@ -313,7 +329,10 @@ h1{
   </div>
 
   <div class="addbar">
-    <input id="addInput" type="text" placeholder="ADD A FILM OR SHOW..." autocomplete="off">
+    <div class="addwrap">
+      <input id="addInput" type="text" placeholder="ADD A FILM OR SHOW..." autocomplete="off">
+      <div id="suggest" class="suggest hidden"></div>
+    </div>
     <button id="addBtn">ADD</button>
   </div>
 
@@ -530,12 +549,71 @@ function closeDetail(){
   render();
 }
 
+// ---- Autocomplete for the add input (OMDb title search) ----
+var suggTimer = null, suggSeq = 0;
+function suggestHide(){
+  var box = document.getElementById("suggest");
+  if(box){ box.classList.add("hidden"); box.innerHTML = ""; }
+}
+function suggestRender(list){
+  var box = document.getElementById("suggest");
+  box.innerHTML = "";
+  list.forEach(function(m){
+    var row = document.createElement("div");
+    row.className = "sugg-item";
+    row.dataset.title = m.Title || "";
+    var st = document.createElement("span");
+    st.className = "st";
+    st.textContent = m.Title || "";
+    var sy = document.createElement("span");
+    sy.className = "sy";
+    sy.textContent = (m.Year && m.Year !== "N/A") ? m.Year : "";
+    row.appendChild(st);
+    row.appendChild(sy);
+    box.appendChild(row);
+  });
+  box.classList.remove("hidden");
+}
+function suggestRun(term){
+  term = (term || "").trim();
+  clearTimeout(suggTimer);
+  if(term.length < 2){ suggSeq++; suggestHide(); return; }
+  var seq = ++suggSeq;
+  suggTimer = setTimeout(function(){
+    fetch("https://www.omdbapi.com/?apikey=" + OMDB_KEY + "&s=" + encodeURIComponent(term))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(seq !== suggSeq) return;
+        var list = (d && d.Response !== "False" && d.Search) ? d.Search.slice(0, 8) : [];
+        if(!list.length){ suggestHide(); return; }
+        suggestRender(list);
+      })
+      .catch(function(){ if(seq === suggSeq) suggestHide(); });
+  }, 300);
+}
+document.getElementById("addInput").addEventListener("input", function(){ suggestRun(this.value); });
+document.getElementById("addInput").addEventListener("blur", function(){
+  setTimeout(suggestHide, 200);
+});
+// keep focus in the input when a suggestion is tapped
+document.getElementById("suggest").addEventListener("mousedown", function(e){ e.preventDefault(); });
+
 // ---- Event delegation (single document listener, per debugging playbook) ----
 document.addEventListener("click", function(e){
   var t = e.target;
 
   // add
-  if(t.id === "addBtn"){ var inp=document.getElementById("addInput"); if(inp.value.trim()){ BP_audio.add(); } addItem(inp.value); inp.value=""; return; }
+  // autocomplete pick
+  var pick = t.closest ? t.closest(".sugg-item") : null;
+  if(pick){
+    var pi = document.getElementById("addInput");
+    pi.value = pick.dataset.title || "";
+    suggestHide();
+    pi.focus();
+    return;
+  }
+
+  if(t.id === "addBtn"){ var inp=document.getElementById("addInput"); if(inp.value.trim()){ BP_audio.add(); } suggestHide(); addItem(inp.value); inp.value=""; return; }
 
   // mute toggle
   if(t.id === "muteBtn"){
@@ -620,7 +698,8 @@ document.addEventListener("click", function(e){
 });
 
 document.getElementById("addInput").addEventListener("keydown", function(e){
-  if(e.key === "Enter"){ addItem(this.value); this.value=""; }
+  if(e.key === "Escape"){ suggestHide(); return; }
+  if(e.key === "Enter"){ suggestHide(); addItem(this.value); this.value=""; }
 });
 
 // ---- Sync loop ----
