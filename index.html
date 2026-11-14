@@ -162,6 +162,13 @@ h1{
 .datenote{font-size:11px;color:var(--greenLt);margin-top:6px;font-weight:500;
   text-transform:uppercase;letter-spacing:1.5px;font-family:"Oswald",sans-serif;}
 
+.mvarrows{flex:none;align-self:center;display:flex;flex-direction:column;gap:4px;}
+.mvbtn{
+  background:transparent;border:1px solid var(--line);color:var(--cream);border-radius:3px;
+  padding:4px 9px;font-size:10px;line-height:1;cursor:pointer;
+}
+.mvbtn:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
+.mvbtn:disabled{opacity:.25;cursor:default;}
 .finbtn{
   flex:none;align-self:center;background:transparent;border:1px solid var(--line);
   color:var(--cream);border-radius:3px;padding:9px 12px;
@@ -329,10 +336,6 @@ h1{
 .st-topline{font-family:"TPGothic","Oswald",sans-serif;font-size:24px;line-height:1.1;color:var(--crimsonLt);
   text-transform:uppercase;margin:8px 0 16px;}
 .st-empty{font-family:"Oswald",sans-serif;font-size:14px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;padding:18px 0;}
-.st-arrows{display:flex;flex-direction:column;margin-left:auto;flex:none;}
-.st-arrow{background:transparent;border:none;color:var(--cream);opacity:.75;font-size:12px;line-height:1;padding:3px 8px;cursor:pointer;}
-.st-arrow:hover:not(:disabled){opacity:1;color:var(--gold);}
-.st-arrow:disabled{opacity:.18;cursor:default;}
 .st-submit{
   margin:16px 0 4px;width:100%;padding:13px 14px;cursor:pointer;background:transparent;color:var(--cream);
   border:1px solid var(--crimsonLt);border-radius:3px;font-family:"Oswald",sans-serif;font-size:14px;
@@ -504,6 +507,7 @@ function render(){
     var A = state.items[a], B = state.items[b];
     if(state.tab === "done"){ return (B.finished||"").localeCompare(A.finished||""); }
     if(state.tab === "progress"){ return (B.started||"").localeCompare(A.started||""); }
+    if(state.tab === "watch"){ return watchKey(a) - watchKey(b); }
     return (B.added||0) - (A.added||0);
   });
 
@@ -543,10 +547,42 @@ function render(){
         datenote +
         '<div class="crow">' + imdb + kind + '</div>' +
       '</div>' +
+      (state.tab === "watch" ? mvArrows(ids, i) : "") +
       '<button class="finbtn" data-finish="' + ids[i] + '">DONE</button>' +
     '</div>';
   }
   list.innerHTML = html;
+}
+
+// ---- Watch-list order: each film has a sort key; the arrows swap keys with the neighbour ----
+// Films without a saved key fall back to their added time (newest first).
+function watchKey(id){
+  var it = state.items[id];
+  return (typeof it.pos === "number") ? it.pos : -(it.added || 0);
+}
+function watchOrder(){
+  var ids = [];
+  for(var id in state.items){ if(state.items[id].status === "watch") ids.push(id); }
+  return ids.sort(function(a, b){ return watchKey(a) - watchKey(b); });
+}
+function moveWatch(id, dir){
+  var ids = watchOrder();
+  var i = ids.indexOf(id), j = i + dir;
+  if(i < 0 || j < 0 || j >= ids.length) return;
+  var a = ids[i], b = ids[j];
+  var ka = watchKey(a), kb = watchKey(b);
+  state.items[a].pos = kb;
+  state.items[b].pos = ka;
+  fbPut(a, state.items[a]);
+  fbPut(b, state.items[b]);
+  render();
+}
+function mvArrows(ids, i){
+  var id = ids[i], first = (i === 0), last = (i === ids.length - 1);
+  return '<div class="mvarrows">' +
+    '<button class="mvbtn" data-mv="-1" data-id="' + id + '"' + (first ? ' disabled' : '') + ' aria-label="Move up">&#9650;</button>' +
+    '<button class="mvbtn" data-mv="1" data-id="' + id + '"' + (last ? ' disabled' : '') + ' aria-label="Move down">&#9660;</button>' +
+  '</div>';
 }
 
 function fmtDate(d){
@@ -766,6 +802,13 @@ document.addEventListener("click", function(e){
     return;
   }
   if(t.id === "overlay"){ closeDetail(); return; }
+
+  // move a film up or down the To Watch list
+  var mv = t.closest ? t.closest("button[data-mv]") : null;
+  if(mv){
+    if(!mv.disabled) moveWatch(mv.getAttribute("data-id"), parseInt(mv.getAttribute("data-mv"), 10));
+    return;
+  }
 
   // quick finish button
   if(t.classList && t.classList.contains("finbtn")){
@@ -1052,7 +1095,7 @@ poll = setInterval(function(){
 // Shared node /stone = { id, startedAt (server ms), votes: { uid: { picks:[itemId x3], at (server ms) } } }
 // Phase timing runs on each device from the moment it first sees a new session, so a wrong phone
 // clock cannot stall it. Votes are only checked against server timestamps (startedAt and at).
-// Preference: the list order (set with the arrows) decides the rank of the three picked films.
+// Preference: the order films were tapped in decides the rank of the three picked films.
 var STONE = { data: null, uid: "", picks: [], order: [], locked: false, closedFor: null, dismissed: {},
   renderedKey: "", seenId: null, seenAt: null, booted: false };
 var STONE_VOTE_MS = 20000, STONE_GRACE_MS = 5000, STONE_SHOW_MS = 150000;
@@ -1094,26 +1137,6 @@ function stoneWatchList(){
   }).sort(function(a, b){
     return (state.items[b].added || 0) - (state.items[a].added || 0);
   }).map(function(k){ return { id: k, title: state.items[k].title || "" }; });
-}
-// The player's own list order. New films go to the top; existing order is kept.
-function stoneOrdered(){
-  var list = stoneWatchList();
-  var ids = list.map(function(f){ return f.id; });
-  STONE.order = STONE.order.filter(function(id){ return ids.indexOf(id) >= 0; });
-  var missing = ids.filter(function(id){ return STONE.order.indexOf(id) < 0; });
-  STONE.order = missing.concat(STONE.order);
-  return STONE.order.map(function(id){ return list[ids.indexOf(id)]; });
-}
-// Picks always sit in list order, so the list order is the preference order.
-function stoneSetPicks(members){
-  STONE.picks = STONE.order.filter(function(id){ return members.indexOf(id) >= 0; });
-}
-function stoneMove(id, dir){
-  stoneOrdered();
-  var i = STONE.order.indexOf(id), j = i + dir;
-  if(i < 0 || j < 0 || j >= STONE.order.length) return;
-  var tmp = STONE.order[j]; STONE.order[j] = STONE.order[i]; STONE.order[i] = tmp;
-  stoneSetPicks(STONE.picks);
 }
 function stoneNote(msg){
   var n = document.getElementById("stoneNote");
@@ -1157,24 +1180,20 @@ function stoneTally(d){
 }
 
 function stoneVoteHTML(d, ph){
-  var list = stoneOrdered();
+  var list = stoneWatchList();
   var live = (ph === "voting" && !STONE.locked);
-  var rows = list.map(function(f, i){
+  var live = (ph === "voting" && !STONE.locked);
+  var rows = list.map(function(f){
     var rank = STONE.picks.indexOf(f.id);
     var cls = "st-row" + (rank >= 0 ? " picked" : "") + (live ? "" : " locked");
-    var up = (i === 0) || !live, down = (i === list.length - 1) || !live;
     return '<div class="' + cls + '" data-id="' + stoneEsc(f.id) + '">' +
       '<span class="st-rank">' + (rank >= 0 ? (rank + 1) : "") + '</span>' +
-      '<div class="st-col"><span class="st-name">' + stoneEsc(f.title) + '</span></div>' +
-      '<div class="st-arrows">' +
-        '<button class="st-arrow" data-dir="-1" data-id="' + stoneEsc(f.id) + '"' + (up ? ' disabled' : '') + ' aria-label="Move up">&#9650;</button>' +
-        '<button class="st-arrow" data-dir="1" data-id="' + stoneEsc(f.id) + '"' + (down ? ' disabled' : '') + ' aria-label="Move down">&#9660;</button>' +
-      '</div></div>';
+      '<div class="st-col"><span class="st-name">' + stoneEsc(f.title) + '</span></div></div>';
   }).join("");
   var status;
   if(ph === "closing") status = "Counting the stones...";
   else if(STONE.locked) status = "Locked in. Waiting for the others";
-  else status = STONE.picks.length + " of 3 chosen. Tap to pick, arrows to order";
+  else status = STONE.picks.length + " of 3 chosen. Tap in order of preference";
   var canLock = !STONE.locked && STONE.picks.length === 3;
   var btn = (ph === "voting" && !STONE.locked)
     ? '<button class="st-submit" data-act="lock"' + (canLock ? '' : ' disabled') + '>LOCK IN</button>' : '';
@@ -1218,7 +1237,7 @@ function stoneKey(){
   var d = STONE.data, ph = stonePhase();
   var ids = stoneWatchList().map(function(f){ return f.id; }).join(",");
   var votes = (d && d.votes) ? JSON.stringify(d.votes) : "";
-  return [ph, d && d.id, STONE.picks.join(","), STONE.order.join(","), STONE.locked, ids, votes,
+  return [ph, d && d.id, STONE.picks.join(","), STONE.locked, ids, votes,
     !!(d && STONE.dismissed[d.id])].join("#");
 }
 function stoneRender(){
@@ -1255,8 +1274,7 @@ function stonePoll(){
       // pick up our own vote after a reload
       var mine = d && d.votes && d.votes[STONE.uid];
       if(mine){
-        stoneOrdered();
-        stoneSetPicks(stoneToArr(mine.picks).slice(0, 3));
+        STONE.picks = stoneToArr(mine.picks).slice(0, 3);
         STONE.locked = true;
       }
     }).catch(function(){});
@@ -1318,25 +1336,15 @@ document.getElementById("stoneBtn").addEventListener("click", stoneStart);
 document.getElementById("stoneOverlay").addEventListener("click", function(e){
   var t = e.target;
   var canEdit = (stonePhase() === "voting" && !STONE.locked);
-  // arrows reorder the list
-  var arrow = t.closest ? t.closest("button[data-dir]") : null;
-  if(arrow){
-    if(canEdit && !arrow.disabled){
-      stoneMove(arrow.getAttribute("data-id"), parseInt(arrow.getAttribute("data-dir"), 10));
-      stoneRender();
-    }
-    return;
-  }
   // tapping a row picks or unpicks that film (three at most)
   var row = t.closest ? t.closest(".st-row") : null;
   if(row && canEdit){
     var id = row.getAttribute("data-id");
-    stoneOrdered();
     var members = STONE.picks.slice();
     var i = members.indexOf(id);
     if(i >= 0) members.splice(i, 1);
     else if(members.length < 3) members.push(id);
-    stoneSetPicks(members);
+    STONE.picks = members;
     stoneRender();
     return;
   }
